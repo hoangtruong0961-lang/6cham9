@@ -100,6 +100,86 @@ export const TAWA_REGEX = {
 };
 
 /**
+ * Tự động đóng các thẻ thinking chưa đóng khi AI quên đóng trước khi vào nội dung truyện chính.
+ */
+export const sanitizeUnclosedThinkingTags = (text: string): string => {
+  if (typeof text !== 'string' || !text) return text;
+
+  const possibleTags = ["thinking", "think", "thinhking", "thought", "thoughts"];
+  let result = text;
+
+  for (const tag of possibleTags) {
+    const openTagRegex = new RegExp(`<${tag}\\s*>`, 'i');
+    const closeTagRegex = new RegExp(`</${tag}\\s*>`, 'i');
+
+    let lastSearchIdx = 0;
+    while (true) {
+      const remainingResult = result.substring(lastSearchIdx);
+      const openMatch = remainingResult.match(openTagRegex);
+      if (!openMatch) break;
+
+      const openIdx = lastSearchIdx + openMatch.index!;
+      const contentStartIdx = openIdx + openMatch[0].length;
+      const afterOpen = result.substring(contentStartIdx);
+
+      // Nếu đã có tag đóng đi sau tag mở này, dịch qua để tìm cặp tiếp theo nếu có
+      const closeMatch = afterOpen.match(closeTagRegex);
+      if (closeMatch) {
+        lastSearchIdx = contentStartIdx + closeMatch.index! + closeMatch[0].length;
+        if (lastSearchIdx >= result.length) break;
+        continue;
+      }
+
+      // Hướng 1: Phục hồi dựa trên sự hiện diện của các thẻ XML hệ thống khác nằm ngoài thinking
+      const otherTags = [
+        "choices", "branches", "table_stored", "tableEdit", "set_time", "time_cost", 
+        "incrementalSummary", "content", "story", "finish", "OntologicalSeverance",
+        "Co-AuthorshipGrant", "HypotheticalConstruct", "AxiomaticImmunity"
+      ];
+
+      let earliestNonThinkingTagIdx = -1;
+      for (const otherTag of otherTags) {
+        const otherOpenRegex = new RegExp(`<${otherTag}\\s*>`, 'i');
+        const otherCloseRegex = new RegExp(`</${otherTag}\\s*>`, 'i');
+
+        const otherOpenMatch = afterOpen.match(otherOpenRegex);
+        if (otherOpenMatch && (earliestNonThinkingTagIdx === -1 || otherOpenMatch.index! < earliestNonThinkingTagIdx)) {
+          earliestNonThinkingTagIdx = otherOpenMatch.index!;
+        }
+
+        const otherCloseMatch = afterOpen.match(otherCloseRegex);
+        if (otherCloseMatch && (earliestNonThinkingTagIdx === -1 || otherCloseMatch.index! < earliestNonThinkingTagIdx)) {
+          earliestNonThinkingTagIdx = otherCloseMatch.index!;
+        }
+      }
+
+      if (earliestNonThinkingTagIdx !== -1) {
+        const closePosition = contentStartIdx + earliestNonThinkingTagIdx;
+        result = result.substring(0, closePosition) + `</${tag}>\n` + result.substring(closePosition);
+        lastSearchIdx = closePosition + `</${tag}>\n`.length;
+        continue;
+      }
+
+      // Hướng 2: Phục hồi dựa trên chuyển cảnh truyện/đối thoại (Vietnamese text transition)
+      // Sử dụng mẫu so khớp song song giữa double-newline + dấu hội thoại, pronoun hoặc từ mang dấu tiếng Việt
+      const dialoguePattern = /\n\s*\n+(?=[「“-]|Watanabe|Miki|Yuki|Kiyono|Rin|Tôi|Hôm sau|Lúc này|Sau đó|Bạn|Tôi|Ngươi|Trời|Đêm|Bỗng|Đột nhiên|Lúc|Khi|Hắn|Nàng|Cô|Anh|[\w]*[àáâãèéêìíòóôõùúýăđĩũơưảẻỉỏủỷỹạẹịọựửừứựồốổỗộờớởỡợằắẳẵặỳýỷỹỵ][\w]*)/gi;
+      const dialogueMatch = afterOpen.match(dialoguePattern);
+      if (dialogueMatch && dialogueMatch.index! > 20) {
+        const closePosition = contentStartIdx + dialogueMatch.index!;
+        result = result.substring(0, closePosition) + `\n</${tag}>` + result.substring(closePosition);
+        lastSearchIdx = closePosition + `\n</${tag}>`.length;
+        continue;
+      }
+
+      // Không tìm thấy chuyển cảnh cụ thể thích hợp để sửa lỗi tags (vẫn là dòng thoughts dang dở trong luồng stream)
+      break;
+    }
+  }
+
+  return result;
+};
+
+/**
  * Trích xuất nội dung nằm giữa tag mở và tag đóng
  * Hỗ trợ cả trường hợp tag chưa đóng (cho streaming) hoặc có khoảng trắng trong tag
  * @param text Văn bản gốc
@@ -109,14 +189,17 @@ export const TAWA_REGEX = {
 export const extractTagContent = (text: string, tagName: string): string | null => {
   if (typeof text !== 'string' || !text) return null;
   
+  const isThinkingTag = ['thinking', 'think', 'thinhking', 'thought', 'thoughts'].includes(tagName.toLowerCase());
+  const targetText = isThinkingTag ? sanitizeUnclosedThinkingTags(text) : text;
+  
   // Regex hỗ trợ khoảng trắng trong tag mở: <tag >
   const openTagRegex = new RegExp(`<${tagName}\\s*>`, 'i');
   
-  const openMatch = text.match(openTagRegex);
+  const openMatch = targetText.match(openTagRegex);
   if (!openMatch) return null;
   
   const startIndex = openMatch.index! + openMatch[0].length;
-  const afterOpenText = text.substring(startIndex);
+  const afterOpenText = targetText.substring(startIndex);
   
   // Standard nested tag balancing with depths to handle nested tag of same name safely
   const tokenRegex = new RegExp(`<(/?)${tagName}\\s*>`, 'gi');
@@ -399,11 +482,14 @@ export const extractJson = <T>(text: string): T | null => {
 export const cleanRawText = (text: string): string => {
   if (typeof text !== 'string' || !text) return "";
   
-  const absoluteOriginal = text.trim();
+  // Tự động sửa chữa các thẻ thinking chưa được đóng để tránh nuốt mất chính văn
+  const balancedText = sanitizeUnclosedThinkingTags(text);
+  
+  const absoluteOriginal = balancedText.trim();
 
   // 0. Bảo vệ code blocks, sandboxes, và full HTML documents khỏi bị làm sạch hoặc lọc dòng
   const protectedCodeBlocks: string[] = [];
-  let cleaned = text.replace(/```[\s\S]*?```/g, (match) => {
+  let cleaned = balancedText.replace(/```[\s\S]*?```/g, (match) => {
     protectedCodeBlocks.push(match);
     return `__SYS_CODEBLOCK_PROTECTED_${protectedCodeBlocks.length - 1}__`;
   });
