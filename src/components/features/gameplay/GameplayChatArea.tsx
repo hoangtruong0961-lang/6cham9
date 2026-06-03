@@ -556,11 +556,6 @@ const TawaMessageRenderer: React.FC<TawaMessageRendererProps> = React.memo(
                   className="animate-spin text-mystic-accent"
                 />
               </div>
-              {userAction && (
-                <div className="text-sm font-serif italic text-stone-500 dark:text-slate-400 opacity-70">
-                  &ldquo;{userAction}&rdquo;
-                </div>
-              )}
             </div>
           )}
 
@@ -742,11 +737,6 @@ const TawaMessageRenderer: React.FC<TawaMessageRendererProps> = React.memo(
                     ? "Khởi Đầu (Lượt 0)"
                     : `Lượt ${turnNumber}`}
                 </div>
-                {userAction && (
-                  <div className="text-sm font-serif italic text-stone-500 dark:text-slate-400">
-                    &ldquo;{userAction}&rdquo;
-                  </div>
-                )}
               </div>
             )}
             {processedContent.mainContent ? (
@@ -816,11 +806,6 @@ const TawaMessageRenderer: React.FC<TawaMessageRendererProps> = React.memo(
             <div className="text-[10px] font-black uppercase tracking-[0.2em] text-mystic-accent mb-1 opacity-80">
               {turnNumber === 0 ? "Khởi Đầu (Lượt 0)" : `Lượt ${turnNumber}`}
             </div>
-            {userAction && (
-              <div className="text-sm font-serif italic text-stone-500 dark:text-slate-400">
-                &ldquo;{userAction}&rdquo;
-              </div>
-            )}
           </div>
         )}
         {renderContentBlocks(mainContent) ||

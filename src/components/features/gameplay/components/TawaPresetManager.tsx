@@ -166,6 +166,10 @@ export function parseBuiltinPreset(id: string, name: string, data: any): SavedPr
     config.modules = data;
   }
 
+  // Ensure config has id and name
+  config.id = id;
+  config.name = name;
+
   const enabledMap = extractEnabledMapFromPromptOrder(data.prompt_order);
   if (config.modules && Array.isArray(config.modules)) {
     config.modules = config.modules.map((m: any) => {
@@ -258,11 +262,16 @@ export default function TawaPresetManager({
     if (initialPreset) {
       const targetId = initialPreset.id || "custom_world";
       const existingIndex = baseList.findIndex((p) => p.id === targetId);
+      const alignedPreset = {
+        ...initialPreset,
+        id: targetId,
+        name: initialPreset.name || "World Preset"
+      };
       if (existingIndex === -1) {
         baseList.push({
           id: targetId,
           name: initialPreset.name || "World Preset",
-          config: initialPreset,
+          config: alignedPreset,
         });
       } else {
         // Sync/Update with fresh config from the loaded world save (e.g. from IndexedDB or imported JSON)
@@ -270,7 +279,7 @@ export default function TawaPresetManager({
           ...baseList[existingIndex],
           config: {
             ...baseList[existingIndex].config,
-            ...initialPreset
+            ...alignedPreset
           }
         };
       }
@@ -279,13 +288,15 @@ export default function TawaPresetManager({
       baseList.push({
         id: "default",
         name: "Default",
-        config: { modules: [] },
+        config: { id: "default", name: "Default", modules: [] },
       });
     }
 
     // Run normalization process on ALL loaded configs to heal any legacy formats/incomplete files
     baseList.forEach((p) => {
       if (p.config) {
+        p.config.id = p.id;
+        p.config.name = p.name;
         normalizePresetConfig(p.config);
       }
     });
@@ -297,6 +308,13 @@ export default function TawaPresetManager({
     if (initialPreset?.id) return initialPreset.id;
     return dbService.getKeyValueSync(ACTIVE_PRESET_ID_KEY) || presets[0]?.id || "";
   });
+
+  // Sync active preset ID state if initialPreset changes
+  useEffect(() => {
+    if (initialPreset?.id) {
+      setActivePresetId(initialPreset.id);
+    }
+  }, [initialPreset]);
 
   const activePreset =
     presets.find((p) => p.id === activePresetId) || presets[0];
@@ -344,9 +362,31 @@ export default function TawaPresetManager({
     if (!activePreset) return;
 
     try {
+      const targetId = activePreset.id || activePresetId;
+      const targetName = activePreset.name || "World Preset";
+
+      // Ensure activePreset config has id and name
+      activePreset.config.id = targetId;
+      activePreset.config.name = targetName;
+
+      // Sync all configs with their preset wrappers to enforce data integrity
+      const updatedPresets = presets.map((p) => {
+        if (p.config) {
+          return {
+            ...p,
+            config: {
+              ...p.config,
+              id: p.id,
+              name: p.name,
+            },
+          };
+        }
+        return p;
+      });
+
       // 1. Force save localPresets to IndexedDB keyval cache
-      await dbService.setKeyValue(PRESETS_STORAGE_KEY, presets);
-      await dbService.setKeyValue(ACTIVE_PRESET_ID_KEY, activePresetId);
+      await dbService.setKeyValue(PRESETS_STORAGE_KEY, updatedPresets);
+      await dbService.setKeyValue(ACTIVE_PRESET_ID_KEY, targetId);
 
       // 2. Propagate configuration state to parent react state immediately
       onConfigChange(activePreset.config);
@@ -598,6 +638,8 @@ export default function TawaPresetManager({
         normalizePresetConfig(newConfig);
 
         const presetId = "preset_" + Date.now();
+        newConfig.id = presetId;
+        newConfig.name = name;
         setPresets((prev) => {
           const updated = [...prev, { id: presetId, name, config: newConfig }];
           dbService.setKeyValue(PRESETS_STORAGE_KEY, updated);
@@ -658,7 +700,11 @@ export default function TawaPresetManager({
     setPresets((prev) => {
       const updated = [
         ...prev,
-        { id: presetId, name: "New Preset", config: { modules: [] } },
+        { 
+          id: presetId, 
+          name: "New Preset", 
+          config: { id: presetId, name: "New Preset", modules: [] } 
+        },
       ];
       dbService.setKeyValue(PRESETS_STORAGE_KEY, updated);
       return updated;
@@ -670,12 +716,15 @@ export default function TawaPresetManager({
   const clonePreset = () => {
     const presetId = "preset_" + Date.now();
     setPresets((prev) => {
+      const clonedConfig = JSON.parse(JSON.stringify(config));
+      clonedConfig.id = presetId;
+      clonedConfig.name = activePreset.name + " (Copy)";
       const updated = [
         ...prev,
         {
           id: presetId,
           name: activePreset.name + " (Copy)",
-          config: JSON.parse(JSON.stringify(config)),
+          config: clonedConfig,
         },
       ];
       dbService.setKeyValue(PRESETS_STORAGE_KEY, updated);

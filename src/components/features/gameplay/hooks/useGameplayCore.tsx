@@ -1370,41 +1370,54 @@ export const useGameplayCore = ({
     const modelMessages = historyList.filter(m => m.role === 'model');
     if (modelMessages.length === 0) return false;
     
-    // We can check the latest model response
+    // We check the latest model response
     const lastModelMsg = modelMessages[modelMessages.length - 1];
     const textToSearch = lastModelMsg.text.toLowerCase();
     
-    const deathKeywords = [
+    // 1a. Explicit System Event Check: This is 100% accurate and gold standard.
+    if (textToSearch.includes('player_character_died') || textToSearch.includes('system_event') && textToSearch.includes('died')) {
+      return true;
+    }
+    
+    // 1b. Fallback High-Precision Keywords (Strict targeting of the protagonist, avoiding loose words like "tử vong" or "bị giết chết" or "hồn phi phách tán")
+    const preciseDeathPhrases = [
       "bạn đã chết",
       "bạn đã tử vong",
       "ngươi đã chết",
       "ngươi đã tử vong",
+      "nhân vật chính đã chết",
+      "nhân vật chính đã tử vong",
+      "bạn bị giết chết",
+      "ngươi bị giết chết",
+      "bí cảnh thất bại",
       "trò chơi kết thúc",
       "game over",
       "you died",
       "you have died",
-      "nhân vật đã chết",
-      "bị giết chết",
-      "hồn phi phách tán",
-      "tử vong"
+      "you are dead"
     ];
     
-    if (deathKeywords.some(keyword => textToSearch.includes(keyword))) {
+    if (preciseDeathPhrases.some(phrase => textToSearch.includes(phrase))) {
       return true;
     }
     
-    // 2. Scan LSR stats
+    // 2. Scan LSR stats (CRITICAL BUG FIX: Only check Máu/HP, never Stamina/Thể lực!)
     if (lsrData && lsrData['2']) {
       const t2 = lsrData['2'] as any[][];
       const playerStats = t2.map(row => ({ name: row[0], value: row[1], desc: row[2] }));
-      const healthStat = playerStats.find(s => 
-        s.name?.toLowerCase().includes('máu') || 
-        s.name?.toLowerCase().includes('thể lực') || 
-        s.name?.toLowerCase().includes('hp')
-      );
+      const healthStat = playerStats.find(s => {
+        const nameLower = s.name?.toLowerCase() || '';
+        // Only target actual health points, absolutely exclude stamina (thể lực, stamina, mana, nội lực)
+        return (nameLower.includes('máu') || nameLower.includes('hp') || nameLower.includes('sinh mệnh') || nameLower.includes('health'))
+          && !nameLower.includes('thể lực')
+          && !nameLower.includes('stamina')
+          && !nameLower.includes('mana')
+          && !nameLower.includes('nội lực');
+      });
       if (healthStat) {
         const valStr = String(healthStat.value).toLowerCase().trim();
-        if (valStr === '0' || valStr === '0%' || valStr === 'cạn kiệt' || valStr === 'chết' || valStr === 'tử vong') {
+        // HP being '0', '0%' or explicitly 'chết', 'tử vong', 'đã chết'
+        if (valStr === '0' || valStr === '0%' || valStr === 'chết' || valStr === 'tử vong' || valStr === 'đã chết') {
           return true;
         }
       }

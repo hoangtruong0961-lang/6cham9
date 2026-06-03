@@ -28,7 +28,11 @@ export const DIFFICULTY_LEVELS: DifficultyLevel[] = [
   {
     id: 'torment',
     label: 'Địa Ngục (Hell)',
-    prompt: `Game Difficulty: Hell / Torment — Brutal survival and unforgiving destiny. This is a Permadeath Mode. The player has only one save file. If the player character dies, they stay dead forever, the entire save is instantly deleted, and the screen will show a Game Over/Death screen with only two options: Create New World or Return to Menu.`
+    prompt: `Game Difficulty: Hell / Torment — Brutal survival and unforgiving destiny. This is a Permadeath Mode.
+RULES FOR DEATH TRIGGERING:
+1. The protagonist (player character) does NOT have 100% smooth success for all requests/actions. There are high risks, variation, and struggles.
+2. An elegant failure or critical injury is NOT a death. Characters can survive near-death experiences, lose items or companions, or suffer permanent wounds. Do NOT trigger a direct character death unless a fatal event is completely unavoidable or highly dramatic and logical.
+3. If (and ONLY if) you as the Game Master AI have consistently determined and confirmed that the protagonist/player character is dead, you MUST explicitly output this tag at the very end of your response: <system_event>PLAYER_CHARACTER_DIED</system_event>. Do NOT output this tag if the player is still alive, injured, or merely near death.`
   }
 ];
 
